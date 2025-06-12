@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XMRig Proxy Stats</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #000;
+            color: #0f0;
+            padding: 10px;
+            line-height: 1.2;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            border: 1px solid #0f0;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 5px;
+            border-bottom: 1px solid #0f0;
+        }
+        
+        .header h1 {
+            color: #0f0;
+            font-size: 1.2em;
+            margin: 0;
+        }
+        
+        .config-section {
+            padding: 5px;
+            border-bottom: 1px solid #0f0;
+        }
+        
+        .config-inputs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        
+        .config-inputs .input-row {
+            display: flex;
+            gap: 5px;
+            width: 100%;
+        }
+        
+        .config-inputs .button-row {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        
+        .config-inputs label {
+            color: #0f0;
+            font-weight: normal;
+            min-width: 80px;
+        }
+        
+        .config-inputs input {
+            padding: 2px;
+            border: 1px solid #0f0;
+            background: #000;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            width: 120px;
+        }
+        
+        .config-inputs .token-input {
+            flex-grow: 1;
+        }
+        
+        .config-inputs button {
+            padding: 2px 5px;
+            background: #000;
+            color: #0f0;
+            border: 1px solid #0f0;
+            cursor: pointer;
+        }
+        
+        .config-inputs button:hover {
+            background: #0f0;
+            color: #000;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        
+        .status-online { background: #0f0; }
+        .status-offline { background: #f00; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2px;
+            padding: 5px;
+            border-bottom: 1px solid #0f0;
+        }
+        
+        .stat-card {
+            border: 1px solid #0f0;
+            padding: 5px;
+        }
+        
+        .stat-card h3 {
+            color: #0f0;
+            font-size: 1em;
+            margin: 0 0 2px 0;
+        }
+        
+        .stat-value {
+            font-size: 1em;
+            font-weight: normal;
+            color: #0f0;
+            margin: 0;
+        }
+        
+        .workers-section {
+            padding: 5px;
+            border: 1px solid #0f0;
+            margin-top: 5px;
+        }
+        
+        .workers-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .workers-table th,
+        .workers-table td {
+            padding: 2px;
+            text-align: left;
+            border: 1px solid #0f0;
+        }
+        
+        .workers-table th {
+            background: #000;
+            color: #0f0;
+            font-weight: normal;
+        }
+        
+        .workers-table tr:hover {
+            background: #001a00;
+        }
+        
+        .error-message {
+            background: #300;
+            color: #f00;
+            padding: 5px;
+            border: 1px solid #f00;
+            margin: 5px 0;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 5px;
+            color: #0f0;
+        }
+        
+        .refresh-info {
+            text-align: center;
+            color: #0f0;
+            padding: 5px;
+            font-size: 0.8em;
+        }
+        
+        .editable-interval {
+            cursor: pointer;
+            border-bottom: 1px dashed #0f0;
+            padding: 0 2px;
+        }
+        
+        .editable-interval:focus {
+            outline: none;
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>XMRig Proxy Stats Dashboard</h1>
+            <div id="connection-status">
+                <span class="status-indicator status-offline"></span>
+                <span>Disconnected</span>
+            </div>
+        </div>
+        
+        <div class="config-section">
+            <div class="config-inputs">
+                <div class="input-row">
+                    <label for="proxy-host">Proxy Host:</label>
+                    <input type="text" id="proxy-host" value="192.168.8.17" placeholder="192.168.8.17">
+                    <label for="proxy-port">API Port:</label>
+                    <input type="number" id="proxy-port" value="8080" placeholder="8080">
+                    <div>
+                        <label for="access-token">Access Token:</label>
+                        <input type="password" id="access-token" placeholder="Optional" class="token-input" oninput="maskToken(this)">
+                    </div>
+                </div>
+                <div class="button-row">
+                    <button onclick="updateConfig()">Connect</button>
+                    <button onclick="toggleAutoRefresh()" id="auto-refresh-btn">Enable Auto-refresh</button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="error-container"></div>
+        
+        <div id="stats-container" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Hashrate</h3>
+                    <div class="stat-value" id="total-hashrate">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Connected Workers</h3>
+                    <div class="stat-value" id="workers-count">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Accepted Shares</h3>
+                    <div class="stat-value" id="accepted-shares">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Active Upstreams</h3>
+                    <div class="stat-value" id="upstreams-count">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Uptime</h3>
+                    <div class="stat-value" id="uptime">0</div>
+                </div>
+            </div>
+            
+            <div class="workers-section">
+                <h3>Active Workers</h3>
+                <table class="workers-table">
+                    <thead>
+                        <tr>
+                            <th>Worker ID</th>
+                            <th>IP Address</th>
+                            <th>Accepted</th>
+                            <th>Rejected</th>
+                            <th>10m Hashrate (kH/s)</th>
+                            <th>24h Hashrate (kH/s)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="workers-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="refresh-info">
+            <div id="last-update">Never updated</div>
+            <div>Auto-refresh: <span id="auto-refresh-status">Disabled</span> (<span id="refresh-interval" class="editable-interval" contenteditable="true">5</span>s)</div>
+        </div>
+    </div>
+
+    <script>
+        let proxyHost = '192.168.8.17';
+        let proxyPort = 8080;
+        let autoRefreshInterval = null;
+        let isAutoRefresh = false;
+        let workersData = { workers: [] };
+        let refreshIntervalValue = 5; // Default interval in seconds
+
+        function updateConfig() {
+            proxyHost = document.getElementById('proxy-host')?.value || '192.168.8.17';
+            proxyPort = document.getElementById('proxy-port')?.value || 8080;
+            fetchStats();
+        }
+
+        function toggleAutoRefresh() {
+            if (isAutoRefresh) {
+                clearInterval(autoRefreshInterval);
+                isAutoRefresh = false;
+                const autoRefreshBtn = document.getElementById('auto-refresh-btn');
+                const autoRefreshStatus = document.getElementById('auto-refresh-status');
+                if (autoRefreshBtn) autoRefreshBtn.textContent = 'Enable Auto-refresh';
+                if (autoRefreshStatus) autoRefreshStatus.textContent = 'Disabled';
+            } else {
+                autoRefreshInterval = setInterval(fetchStats, refreshIntervalValue * 1000);
+                isAutoRefresh = true;
+                const autoRefreshBtn = document.getElementById('auto-refresh-btn');
+                const autoRefreshStatus = document.getElementById('auto-refresh-status');
+                if (autoRefreshBtn) autoRefreshBtn.textContent = 'Disable Auto-refresh';
+                if (autoRefreshStatus) autoRefreshStatus.textContent = 'Enabled';
+                fetchStats();
+            }
+        }
+
+        function maskToken(input) {
+            const value = input.value;
+            input.value = '*'.repeat(value.length);
+            input.dataset.actualValue = value;
+        }
+
+        function updateRefreshInterval(element) {
+            console.log('Updating refresh interval'); // Debug log
+            let newInterval = parseInt(element.textContent, 10) || 5; // Default to 5 if invalid
+            if (newInterval < 1) newInterval = 5; // Minimum interval
+            if (newInterval !== refreshIntervalValue) {
+                refreshIntervalValue = newInterval;
+                element.textContent = newInterval; // Reset to valid number
+                console.log('Updated refresh interval to:', refreshIntervalValue, 'seconds'); // Debug log
+                if (isAutoRefresh) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = setInterval(fetchStats, refreshIntervalValue * 1000);
+                    console.log('New interval set to:', refreshIntervalValue * 1000, 'ms'); // Debug log
+                }
+            }
+        }
+
+        // Add event listeners after DOM load
+        document.addEventListener('DOMContentLoaded', () => {
+            const refreshInterval = document.getElementById('refresh-interval');
+            if (refreshInterval) {
+                console.log('Refresh interval element found'); // Debug log
+                refreshInterval.addEventListener('focus', () => {
+                    console.log('Refresh interval focused'); // Debug log
+                });
+                // Use document click listener to detect blur
+                document.addEventListener('click', (event) => {
+                    if (!refreshInterval.contains(event.target)) {
+                        console.log('Click outside refresh interval, attempting to update'); // Debug log
+                        if (document.activeElement === refreshInterval) {
+                            updateRefreshInterval(refreshInterval);
+                        }
+                    }
+                });
+            } else {
+                console.error('Refresh interval element not found');
+            }
+            fetchStats();
+        });
+
+        async function fetchStats() {
+            const baseUrl = `http://${proxyHost}:${proxyPort}`;
+            const accessToken = document.getElementById('access-token')?.dataset.actualValue || null;
+            const headers = accessToken ? { "Authorization": `Bearer ${accessToken}` } : {};
+
+            try {
+                showLoading();
+                clearError();
+
+                let data = null;
+                try {
+                    const response = await fetch(`${baseUrl}/1/summary`, { headers });
+                    if (response.ok) {
+                        data = await response.json();
+                        console.log('Summary data:', data);
+                    } else {
+                        console.error(`Failed to fetch /1/summary: ${response.status} ${response.statusText}`);
+                    }
+                } catch (e) {
+                    console.error('Error fetching /1/summary:', e.message);
+                }
+
+                workersData = { workers: [] };
+                if (data) {
+                    try {
+                        const workersResponse = await fetch(`${baseUrl}/1/workers`, { headers });
+                        if (workersResponse.ok) {
+                            workersData = await workersResponse.json();
+                            console.log('Workers data:', workersData);
+                        } else {
+                            console.error(`Failed to fetch /1/workers: ${workersResponse.status} ${workersResponse.statusText}`);
+                            const minersResponse = await fetch(`${baseUrl}/1/miners`, { headers });
+                            if (minersResponse.ok) {
+                                const minersData = await minersResponse.json();
+                                workersData = {
+                                    workers: minersData.miners.map(miner => [
+                                        miner[9] || miner[0].toString(),
+                                        miner[1],
+                                        0,
+                                        miner[2],
+                                        miner[3],
+                                        new Date().getTime() / 1000
+                                    ])
+                                };
+                                console.log('Miners data as workers fallback:', workersData);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error fetching /1/workers or /1/miners:', e.message);
+                    }
+                }
+
+                if (!data) {
+                    throw new Error('No valid summary data received. Check API port and configuration.');
+                }
+
+                updateUI(data, workersData);
+                setConnectionStatus(true);
+                const lastUpdate = document.getElementById('last-update');
+                if (lastUpdate) {
+                    lastUpdate.textContent = `Last updated: ${new Date().toLocaleTimeString('en-US', { timeZone: 'America/Denver' })}`;
+                } else {
+                    console.error('Element with ID "last-update" not found in DOM');
+                }
+            } catch (error) {
+                console.error('Error in fetchStats:', error);
+                showError(`Failed to connect to XMRig Proxy: ${error.message}. Check that API is enabled and port is correct.`);
+                setConnectionStatus(false);
+            }
+        }
+
+        function updateUI(summary = {}, workersData = { workers: [] }) {
+            const statsContainer = document.getElementById('stats-container');
+            if (!statsContainer) {
+                console.error('Element with ID "stats-container" not found in DOM');
+                return;
+            }
+            statsContainer.style.display = 'block';
+
+            const updateElement = (id, value) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = value;
+                } else {
+                    console.error(`Element with ID "${id}" not found in DOM`);
+                }
+            };
+
+            updateElement('total-hashrate', formatHashrate(summary.hashrate?.total?.[0] || 0));
+            updateElement('workers-count', summary.miners?.now || summary.workers || 0);
+            updateElement('accepted-shares', summary.results?.accepted || 0);
+            updateElement('upstreams-count', summary.upstreams?.active || 0);
+            updateElement('uptime', formatUptime(summary.uptime || 0));
+
+            const workersTbody = document.getElementById('workers-tbody');
+            if (!workersTbody) {
+                console.error('Element with ID "workers-tbody" not found in DOM');
+                return;
+            }
+            workersTbody.innerHTML = '';
+            if (workersData?.workers && Array.isArray(workersData.workers) && workersData.workers.length > 0) {
+                workersData.workers.forEach(worker => {
+                    let hashrate10m = 0;
+                    let hashrate24h = 0;
+                    if (workersData.workers) {
+                        const originalWorker = workersData.workers.find(w => w[0] === worker[0] && w[1] === worker[1]);
+                        if (originalWorker && originalWorker.length > 12) {
+                            hashrate10m = originalWorker[9] || 0; // 10m hashrate
+                            hashrate24h = originalWorker[12] || 0; // 24h hashrate
+                        }
+                    }
+                    const row = workersTbody.insertRow();
+                    row.innerHTML = `
+                        <td>${worker[0] || 'Unknown'}</td>
+                        <td>${worker[1] || 'Unknown'}</td>
+                        <td>${worker[3] || 0}</td>
+                        <td>${worker[4] || 0}</td>
+                        <td>${formatHashrate(hashrate10m)}</td>
+                        <td>${formatHashrate(hashrate24h)}</td>
+                    `;
+                });
+            } else {
+                const row = workersTbody.insertRow();
+                row.innerHTML = '<td colspan="6" style="text-align: center; color: #0f0;">No worker details available</td>';
+            }
+        }
+
+        function formatHashrate(hashrate) {
+            // Assuming input is in kH/s from the API
+            if (hashrate >= 1000) {
+                return (hashrate / 1000).toFixed(2) + ' MH/s';
+            } else if (hashrate >= 1) {
+                return hashrate.toFixed(2) + ' kH/s';
+            }
+            return hashrate.toFixed(2) + ' H/s';
+        }
+
+        function formatUptime(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            if (hours > 0) {
+                return `${hours}h ${minutes}m`;
+            } else if (minutes > 0) {
+                return `${minutes}m ${secs}s`;
+            }
+            return `${secs}s`;
+        }
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp || isNaN(timestamp)) return 'Unknown';
+            const date = new Date(timestamp > 1e12 ? timestamp / 1000 : timestamp);
+            if (isNaN(date.getTime())) {
+                console.error('Invalid timestamp:', timestamp);
+                return 'Unknown';
+            }
+            return date.toLocaleTimeString('en-US', { timeZone: 'America/Denver' });
+        }
+
+        function setConnectionStatus(connected) {
+            const statusEl = document.getElementById('connection-status');
+            const indicator = statusEl?.querySelector('.status-indicator');
+            const text = statusEl?.querySelector('span:last-child');
+            if (!statusEl || !indicator || !text) {
+                console.error('Connection status elements missing in DOM');
+                return;
+            }
+            indicator.className = `status-indicator ${connected ? 'status-online' : 'status-offline'}`;
+            text.textContent = connected ? 'Connected' : 'Disconnected';
+        }
+
+        function showError(message) {
+            const container = document.getElementById('error-container');
+            if (!container) {
+                console.error('Element with ID "error-container" not found in DOM');
+                return;
+            }
+            container.innerHTML = `<div class="error-message">${message}</div>`;
+            const statsContainer = document.getElementById('stats-container');
+            if (statsContainer) statsContainer.style.display = 'none';
+        }
+
+        function clearError() {
+            const container = document.getElementById('error-container');
+            if (container) container.innerHTML = '';
+        }
+
+        function showLoading() {
+            const container = document.getElementById('error-container');
+            if (container) container.innerHTML = '<div class="loading">Loading...</div>';
+        }
+
+        // Wait for DOM to load
+        document.addEventListener('DOMContentLoaded', fetchStats);
+    </script>
+</body>
+</html>
