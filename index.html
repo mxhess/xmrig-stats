@@ -311,18 +311,16 @@
         }
 
         function updateRefreshInterval(element) {
-            console.log('Updating refresh interval'); // Debug log
-            let newInterval = parseInt(element.textContent, 10) || 5; // Default to 5 if invalid
-            if (newInterval < 1) newInterval = 5; // Minimum interval
-            if (newInterval !== refreshIntervalValue) {
-                refreshIntervalValue = newInterval;
-                element.textContent = newInterval; // Reset to valid number
-                console.log('Updated refresh interval to:', refreshIntervalValue, 'seconds'); // Debug log
-                if (isAutoRefresh) {
-                    clearInterval(autoRefreshInterval);
-                    autoRefreshInterval = setInterval(fetchStats, refreshIntervalValue * 1000);
-                    console.log('New interval set to:', refreshIntervalValue * 1000, 'ms'); // Debug log
-                }
+            console.log('Updating refresh interval');
+            let newInterval = parseInt(element.textContent.trim(), 10) || 5;
+            if (newInterval < 1) newInterval = 5;
+            refreshIntervalValue = newInterval;
+            element.textContent = newInterval;
+            console.log('Updated refresh interval to:', refreshIntervalValue, 'seconds');
+            if (isAutoRefresh) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = setInterval(fetchStats, refreshIntervalValue * 1000);
+                console.log('New interval set to:', refreshIntervalValue * 1000, 'ms');
             }
         }
 
@@ -330,17 +328,14 @@
         document.addEventListener('DOMContentLoaded', () => {
             const refreshInterval = document.getElementById('refresh-interval');
             if (refreshInterval) {
-                console.log('Refresh interval element found'); // Debug log
+                console.log('Refresh interval element found');
                 refreshInterval.addEventListener('focus', () => {
-                    console.log('Refresh interval focused'); // Debug log
+                    console.log('Refresh interval focused');
                 });
-                // Use document click listener to detect blur
                 document.addEventListener('click', (event) => {
                     if (!refreshInterval.contains(event.target)) {
-                        console.log('Click outside refresh interval, attempting to update'); // Debug log
-                        if (document.activeElement === refreshInterval) {
-                            updateRefreshInterval(refreshInterval);
-                        }
+                        console.log('Click outside refresh interval, attempting to update');
+                        updateRefreshInterval(refreshInterval);
                     }
                 });
             } else {
@@ -450,26 +445,32 @@
             }
             workersTbody.innerHTML = '';
             if (workersData?.workers && Array.isArray(workersData.workers) && workersData.workers.length > 0) {
-                workersData.workers.forEach(worker => {
-                    let hashrate10m = 0;
-                    let hashrate24h = 0;
-                    if (workersData.workers) {
-                        const originalWorker = workersData.workers.find(w => w[0] === worker[0] && w[1] === worker[1]);
-                        if (originalWorker && originalWorker.length > 12) {
-                            hashrate10m = originalWorker[9] || 0; // 10m hashrate
-                            hashrate24h = originalWorker[12] || 0; // 24h hashrate
+                const activeWorkers = workersData.workers.filter(worker => worker[2] > 0); // Filter out workers with Connection count = 0 (index 2)
+                if (activeWorkers.length > 0) {
+                    activeWorkers.forEach(worker => {
+                        let hashrate10m = 0;
+                        let hashrate24h = 0;
+                        if (workersData.workers) {
+                            const originalWorker = workersData.workers.find(w => w[0] === worker[0] && w[1] === worker[1]);
+                            if (originalWorker && originalWorker.length > 12) {
+                                hashrate10m = originalWorker[9] || 0;
+                                hashrate24h = originalWorker[12] || 0;
+                            }
                         }
-                    }
+                        const row = workersTbody.insertRow();
+                        row.innerHTML = `
+                            <td>${worker[0] || 'Unknown'}</td>
+                            <td>${worker[1] || 'Unknown'}</td>
+                            <td>${worker[3] || 0}</td>
+                            <td>${worker[4] || 0}</td>
+                            <td>${formatHashrate(hashrate10m)}</td>
+                            <td>${formatHashrate(hashrate24h)}</td>
+                        `;
+                    });
+                } else {
                     const row = workersTbody.insertRow();
-                    row.innerHTML = `
-                        <td>${worker[0] || 'Unknown'}</td>
-                        <td>${worker[1] || 'Unknown'}</td>
-                        <td>${worker[3] || 0}</td>
-                        <td>${worker[4] || 0}</td>
-                        <td>${formatHashrate(hashrate10m)}</td>
-                        <td>${formatHashrate(hashrate24h)}</td>
-                    `;
-                });
+                    row.innerHTML = '<td colspan="6" style="text-align: center; color: #0f0;">No active workers with connections</td>';
+                }
             } else {
                 const row = workersTbody.insertRow();
                 row.innerHTML = '<td colspan="6" style="text-align: center; color: #0f0;">No worker details available</td>';
@@ -477,7 +478,6 @@
         }
 
         function formatHashrate(hashrate) {
-            // Assuming input is in kH/s from the API
             if (hashrate >= 1000) {
                 return (hashrate / 1000).toFixed(2) + ' MH/s';
             } else if (hashrate >= 1) {
@@ -546,3 +546,4 @@
     </script>
 </body>
 </html>
+
