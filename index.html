@@ -205,7 +205,7 @@
             <div class="config-inputs">
                 <div class="input-row">
                     <label for="proxy-host">Proxy Host:</label>
-                    <input type="text" id="proxy-host" value="192.168.8.17" placeholder="192.168.8.17">
+                    <input type="text" id="proxy-host" value="127.0.0.1" placeholder="127.0.0.1">
                     <label for="proxy-port">API Port:</label>
                     <input type="number" id="proxy-port" value="8080" placeholder="8080">
                     <div>
@@ -272,7 +272,7 @@
     </div>
 
     <script>
-        let proxyHost = '192.168.8.17';
+        let proxyHost = '127.0.0.1';
         let proxyPort = 8080;
         let autoRefreshInterval = null;
         let isAutoRefresh = false;
@@ -280,7 +280,7 @@
         let refreshIntervalValue = 5; // Default interval in seconds
 
         function updateConfig() {
-            proxyHost = document.getElementById('proxy-host')?.value || '192.168.8.17';
+            proxyHost = document.getElementById('proxy-host')?.value || '127.0.0.1';
             proxyPort = document.getElementById('proxy-port')?.value || 8080;
             fetchStats();
         }
