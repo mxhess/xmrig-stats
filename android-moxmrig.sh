@@ -5,7 +5,7 @@ set -e
 
 # Update and install dependencies
 apt update -y && apt upgrade -y
-pkg install nano git build-essential cmake tmux -y || { echo "Failed to install dependencies"; exit 1; }
+pkg install nano wget git build-essential cmake tmux -y || { echo "Failed to install dependencies"; exit 1; }
 
 # Clone xmrig
 git clone https://github.com/MoneroOcean/xmrig.git || { echo "Failed to clone xmrig repository"; exit 1; }
