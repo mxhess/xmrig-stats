@@ -20,7 +20,7 @@
         }
         
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             border: 1px solid #0f0;
         }
@@ -146,6 +146,7 @@
             padding: 2px;
             text-align: left;
             border: 1px solid #0f0;
+            font-size: 0.9em;
         }
         
         .workers-table th {
@@ -225,7 +226,7 @@
         <div id="stats-container" style="display: none;">
             <div class="stats-grid">
                 <div class="stat-card">
-                    <h3>Total Hashrate</h3>
+                    <h3>Current Hashrate</h3>
                     <div class="stat-value" id="total-hashrate">0</div>
                 </div>
                 <div class="stat-card">
@@ -255,8 +256,9 @@
                             <th>IP Address</th>
                             <th>Accepted</th>
                             <th>Rejected</th>
-                            <th>10m Hashrate (kH/s)</th>
-                            <th>24h Hashrate (kH/s)</th>
+                            <th>Difficulty</th>
+                            <th>10m Rate</th>
+                            <th>24h Rate</th>
                         </tr>
                     </thead>
                     <tbody id="workers-tbody">
@@ -277,6 +279,7 @@
         let autoRefreshInterval = null;
         let isAutoRefresh = false;
         let workersData = { workers: [] };
+        let minersData = { miners: [] };
         let refreshIntervalValue = 5; // Default interval in seconds
 
         function updateConfig() {
@@ -366,41 +369,39 @@
                     console.error('Error fetching /1/summary:', e.message);
                 }
 
+                // Fetch workers data
                 workersData = { workers: [] };
-                if (data) {
-                    try {
-                        const workersResponse = await fetch(`${baseUrl}/1/workers`, { headers });
-                        if (workersResponse.ok) {
-                            workersData = await workersResponse.json();
-                            console.log('Workers data:', workersData);
-                        } else {
-                            console.error(`Failed to fetch /1/workers: ${workersResponse.status} ${workersResponse.statusText}`);
-                            const minersResponse = await fetch(`${baseUrl}/1/miners`, { headers });
-                            if (minersResponse.ok) {
-                                const minersData = await minersResponse.json();
-                                workersData = {
-                                    workers: minersData.miners.map(miner => [
-                                        miner[9] || miner[0].toString(),
-                                        miner[1],
-                                        0,
-                                        miner[2],
-                                        miner[3],
-                                        new Date().getTime() / 1000
-                                    ])
-                                };
-                                console.log('Miners data as workers fallback:', workersData);
-                            }
-                        }
-                    } catch (e) {
-                        console.error('Error fetching /1/workers or /1/miners:', e.message);
+                try {
+                    const workersResponse = await fetch(`${baseUrl}/1/workers`, { headers });
+                    if (workersResponse.ok) {
+                        workersData = await workersResponse.json();
+                        console.log('Workers data:', workersData);
+                    } else {
+                        console.error(`Failed to fetch /1/workers: ${workersResponse.status} ${workersResponse.statusText}`);
                     }
+                } catch (e) {
+                    console.error('Error fetching /1/workers:', e.message);
+                }
+
+                // Fetch miners data for difficulty information
+                minersData = { miners: [] };
+                try {
+                    const minersResponse = await fetch(`${baseUrl}/1/miners`, { headers });
+                    if (minersResponse.ok) {
+                        minersData = await minersResponse.json();
+                        console.log('Miners data:', minersData);
+                    } else {
+                        console.error(`Failed to fetch /1/miners: ${minersResponse.status} ${minersResponse.statusText}`);
+                    }
+                } catch (e) {
+                    console.error('Error fetching /1/miners:', e.message);
                 }
 
                 if (!data) {
                     throw new Error('No valid summary data received. Check API port and configuration.');
                 }
 
-                updateUI(data, workersData);
+                updateUI(data, workersData, minersData);
                 setConnectionStatus(true);
                 const lastUpdate = document.getElementById('last-update');
                 if (lastUpdate) {
@@ -415,7 +416,7 @@
             }
         }
 
-        function updateUI(summary = {}, workersData = { workers: [] }) {
+        function updateUI(summary = {}, workersData = { workers: [] }, minersData = { miners: [] }) {
             const statsContainer = document.getElementById('stats-container');
             if (!statsContainer) {
                 console.error('Element with ID "stats-container" not found in DOM');
@@ -444,36 +445,50 @@
                 return;
             }
             workersTbody.innerHTML = '';
+            
             if (workersData?.workers && Array.isArray(workersData.workers) && workersData.workers.length > 0) {
                 const activeWorkers = workersData.workers.filter(worker => worker[2] > 0); // Filter out workers with Connection count = 0 (index 2)
                 if (activeWorkers.length > 0) {
                     activeWorkers.forEach(worker => {
-                        let hashrate10m = 0;
-                        let hashrate24h = 0;
-                        if (workersData.workers) {
-                            const originalWorker = workersData.workers.find(w => w[0] === worker[0] && w[1] === worker[1]);
-                            if (originalWorker && originalWorker.length > 12) {
-                                hashrate10m = originalWorker[9] || 0;
-                                hashrate24h = originalWorker[12] || 0;
+                        const workerId = worker[0] || 'Unknown';
+                        const workerIp = worker[1] || 'Unknown';
+                        const accepted = worker[3] || 0;
+                        const rejected = worker[4] || 0;
+                        
+                        // Get hashrate data (10m and 24h)
+                        const hashrate10m = worker[9] || 0;
+                        const hashrate24h = worker[12] || 0;
+                        
+                        // Find matching miner for difficulty
+                        let difficulty = 'N/A';
+                        if (minersData?.miners && Array.isArray(minersData.miners)) {
+                            const matchingMiner = minersData.miners.find(miner => {
+                                // Match by IP address or rig_id
+                                return miner[1] === workerIp || miner[8] === workerId;
+                            });
+                            if (matchingMiner && matchingMiner[5]) {
+                                difficulty = formatDifficulty(matchingMiner[5]);
                             }
                         }
+                        
                         const row = workersTbody.insertRow();
                         row.innerHTML = `
-                            <td>${worker[0] || 'Unknown'}</td>
-                            <td>${worker[1] || 'Unknown'}</td>
-                            <td>${worker[3] || 0}</td>
-                            <td>${worker[4] || 0}</td>
+                            <td>${workerId}</td>
+                            <td>${workerIp}</td>
+                            <td>${accepted}</td>
+                            <td>${rejected}</td>
+                            <td>${difficulty}</td>
                             <td>${formatHashrate(hashrate10m)}</td>
                             <td>${formatHashrate(hashrate24h)}</td>
                         `;
                     });
                 } else {
                     const row = workersTbody.insertRow();
-                    row.innerHTML = '<td colspan="6" style="text-align: center; color: #0f0;">No active workers with connections</td>';
+                    row.innerHTML = '<td colspan="7" style="text-align: center; color: #0f0;">No active workers with connections</td>';
                 }
             } else {
                 const row = workersTbody.insertRow();
-                row.innerHTML = '<td colspan="6" style="text-align: center; color: #0f0;">No worker details available</td>';
+                row.innerHTML = '<td colspan="7" style="text-align: center; color: #0f0;">No worker details available</td>';
             }
         }
 
@@ -484,6 +499,15 @@
                 return hashrate.toFixed(2) + ' kH/s';
             }
             return hashrate.toFixed(2) + ' H/s';
+        }
+
+        function formatDifficulty(difficulty) {
+            if (difficulty >= 1000000) {
+                return (difficulty / 1000000).toFixed(2) + 'M';
+            } else if (difficulty >= 1000) {
+                return (difficulty / 1000).toFixed(1) + 'K';
+            }
+            return difficulty.toString();
         }
 
         function formatUptime(seconds) {
