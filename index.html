@@ -128,6 +128,7 @@
             border: 1px solid #0f0;
             background: #000;
             display: block;
+            cursor: crosshair;
         }
         
         .chart-info {
@@ -143,6 +144,20 @@
             flex: 1;
             text-align: center;
             font-weight: bold;
+        }
+        
+        .chart-tooltip {
+            position: absolute;
+            background: #000;
+            border: 1px solid #0f0;
+            color: #0f0;
+            padding: 4px 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+            line-height: 1.2;
         }
         
         .stat-card h3 {
@@ -261,6 +276,7 @@
                         <span class="chart-current" id="chart-current">Current: --</span>
                         <span id="chart-min">Min: --</span>
                     </div>
+                    <div class="chart-tooltip" id="chart-tooltip"></div>
                 </div>
                 <div class="stat-card">
                     <h3>Accepted Shares</h3>
@@ -391,7 +407,115 @@
                 return;
             }
             hashrateChart = canvas.getContext('2d');
+            
+            // Add mouse event listeners for tooltip
+            canvas.addEventListener('mousemove', handleChartMouseMove);
+            canvas.addEventListener('mouseleave', handleChartMouseLeave);
+            
             drawHashrateChart();
+        }
+
+        function handleChartMouseMove(event) {
+            if (hashrateHistory.length === 0) return;
+            
+            const canvas = event.target;
+            const rect = canvas.getBoundingClientRect();
+            
+            // Calculate scaling ratio between display size and internal canvas size
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            // Get mouse position relative to canvas and scale to internal coordinates
+            const mouseX = (event.clientX - rect.left) * scaleX;
+            const mouseY = (event.clientY - rect.top) * scaleY;
+            
+            // Chart dimensions (same as in drawHashrateChart)
+            const leftMargin = 50;
+            const rightMargin = 10;
+            const chartWidth = canvas.width - leftMargin - rightMargin;
+            
+            // Check if mouse is within chart area
+            if (mouseX < leftMargin || mouseX > leftMargin + chartWidth) {
+                hideTooltip();
+                return;
+            }
+            
+            // Calculate which data point is closest to mouse position
+            const relativeX = (mouseX - leftMargin) / chartWidth;
+            
+            // Get current time window
+            const now = Date.now();
+            const windowDuration = getTimeWindowDuration();
+            const windowStart = isInSlidingMode() ? now - windowDuration : (chartStartTime || now);
+            
+            // Find the closest data point
+            let closestPoint = null;
+            let closestDistance = Infinity;
+            
+            hashrateHistory.forEach(point => {
+                const pointRelativePosition = (point.timestamp - windowStart) / windowDuration;
+                if (pointRelativePosition >= 0 && pointRelativePosition <= 1) {
+                    const distance = Math.abs(pointRelativePosition - relativeX);
+                    if (distance < closestDistance) {
+                        closestDistance = distance;
+                        closestPoint = point;
+                    }
+                }
+            });
+            
+            if (closestPoint) {
+                // Use mouse position relative to canvas for tooltip positioning
+                const mouseRelativeX = event.clientX - rect.left;
+                const mouseRelativeY = event.clientY - rect.top;
+                showTooltip(mouseRelativeX, mouseRelativeY, closestPoint, canvas);
+                // Redraw chart with highlight
+                drawHashrateChart(closestPoint);
+            } else {
+                hideTooltip();
+            }
+        }
+
+        function handleChartMouseLeave() {
+            hideTooltip();
+            drawHashrateChart(); // Redraw without highlight
+        }
+
+        function showTooltip(relativeX, relativeY, dataPoint, canvas) {
+            const tooltip = document.getElementById('chart-tooltip');
+            if (!tooltip) return;
+            
+            const time = new Date(dataPoint.timestamp).toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZone: 'America/Denver'
+            });
+            
+            tooltip.innerHTML = `${time}<br>${formatHashrate(dataPoint.hashrate)}`;
+            tooltip.style.display = 'block';
+            
+            // Get canvas position and chart container position
+            const canvasRect = canvas.getBoundingClientRect();
+            const chartContainer = document.getElementById('hashrate-chart-card');
+            const containerRect = chartContainer.getBoundingClientRect();
+            
+            // Position tooltip relative to the chart container
+            const tooltipX = relativeX + 10; // Small offset from cursor
+            const tooltipY = relativeY - 40; // Above the cursor
+            
+            // Convert to position relative to chart container
+            const containerRelativeX = canvasRect.left - containerRect.left + tooltipX;
+            const containerRelativeY = canvasRect.top - containerRect.top + tooltipY;
+            
+            tooltip.style.left = containerRelativeX + 'px';
+            tooltip.style.top = containerRelativeY + 'px';
+        }
+
+        function hideTooltip() {
+            const tooltip = document.getElementById('chart-tooltip');
+            if (tooltip) {
+                tooltip.style.display = 'none';
+            }
         }
 
         function addHashrateDataPoint(hashrate, timestamp) {
@@ -445,7 +569,7 @@
             return elapsedMinutes >= 180;
         }
 
-        function drawHashrateChart() {
+        function drawHashrateChart(highlightPoint = null) {
             if (!hashrateChart) return;
             
             const canvas = document.getElementById('hashrate-chart');
@@ -556,6 +680,9 @@
                 ctx.beginPath();
                 
                 let firstPoint = true;
+                let highlightX = null;
+                let highlightY = null;
+                
                 hashrateHistory.forEach((point, index) => {
                     // Calculate x position based on timestamp relative to current time window
                     const relativePosition = (point.timestamp - windowStart) / windowDuration;
@@ -566,6 +693,12 @@
                         const normalizedHashrate = (point.hashrate - minHashrate) / range;
                         const y = topMargin + chartHeight - (normalizedHashrate * chartHeight);
                         
+                        // Check if this is the highlight point
+                        if (highlightPoint && point.timestamp === highlightPoint.timestamp) {
+                            highlightX = x;
+                            highlightY = y;
+                        }
+                        
                         if (firstPoint) {
                             ctx.moveTo(x, y);
                             firstPoint = false;
@@ -575,6 +708,14 @@
                     }
                 });
                 ctx.stroke();
+                
+                // Draw highlight dot if we have a highlight point
+                if (highlightX !== null && highlightY !== null) {
+                    ctx.fillStyle = '#0f0';
+                    ctx.beginPath();
+                    ctx.arc(highlightX, highlightY, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
             }
             
             // Draw Y-axis line
