@@ -2,6 +2,8 @@ Designed to look like a curses style console similar to htop but in a web browse
 ![Model](https://github.com/mxhess/xmrig-stats/blob/main/Screenshot.png)
 
 
+Browser does the work and this requires nothing from the webserver.
+
 included script to manage active xmrig-proxy pool
 
 switch_pool.sh usage:
