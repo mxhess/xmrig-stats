@@ -247,7 +247,7 @@
                     <label for="backend-host">Backend Host:</label>
                     <input type="text" id="backend-host" value="127.0.0.1" placeholder="127.0.0.1">
                     <label for="backend-port">Backend Port:</label>
-                    <input type="number" id="backend-port" value="8000" placeholder="8000">
+                    <input type="number" id="backend-port" value="8282" placeholder="8282">
                 </div>
                 <div class="button-row">
                     <button onclick="updateConfig()">Connect</button>
@@ -316,7 +316,7 @@
 
     <script>
         let backendHost = '127.0.0.1';
-        let backendPort = 8000;
+        let backendPort = 8282;
         let autoRefreshInterval = null;
         let isAutoRefresh = false;
         let workersData = { workers: [] };
@@ -328,7 +328,7 @@
 
         function updateConfig() {
             backendHost = document.getElementById('backend-host')?.value || '127.0.0.1';
-            backendPort = document.getElementById('backend-port')?.value || 8000;
+            backendPort = document.getElementById('backend-port')?.value || 8282;
             fetchStats();
         }
 
@@ -772,7 +772,7 @@
                 if (element) {
                     element.textContent = value;
                 } else {
-                    console.error(`Element with ID "${id}" not found in DOM`);
+                    console.error(`Element with ID "${id}" not found in DOM');
                 }
             };
 

@@ -2,7 +2,12 @@ Designed to look like a curses style console similar to htop but in a web browse
 ![Model](https://github.com/mxhess/xmrig-stats/blob/main/Screenshot.png)
 
 
-Browser does the work and this requires nothing from the webserver.
+Browser does much of the work and this requires nothing from the webserver.
+We do need a valkey instance running locally so we can cache the gathered data from the proxy
+and running the xmrig_stats.py python script will require minimal python additions.
+
+you need the python redis and requests packages
+
 
 included script to manage active xmrig-proxy pool
 
