@@ -1,0 +1,15 @@
+[Unit]
+Description=XMRig Stats Proxy Service
+After=network.target
+After=xmrig-proxy.service
+
+[Service]
+User=<standard user>
+WorkingDirectory=/home/<standard-user>/xmrig-stats
+ExecStart=/usr/bin/python3 /home/<standard-user>/xmrig-stats/xmrig_stats.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

@@ -114,7 +114,7 @@
         }
         
         #hashrate-chart-card {
-            grid-column: 1 / -1; /* Span full width */
+            grid-column: 1 / -1;
             position: relative;
         }
         
@@ -251,7 +251,7 @@
                 </div>
                 <div class="button-row">
                     <button onclick="updateConfig()">Connect</button>
-                    <button onclick="toggleAutoRefresh()" id="auto-refresh-btn">Enable Auto-refresh</button>
+                    <button onclick="toggleAutoRefresh()" id="auto-refresh-btn">Disable Auto-refresh</button>
                 </div>
             </div>
         </div>
@@ -261,7 +261,7 @@
         <div id="stats-container" style="display: none;">
             <div class="stats-grid">
                 <div class="stat-card" id="hashrate-chart-card">
-                    <h3>Hashrate Chart (<span id="chart-window-label">30m</span>)</h3>
+                    <h3>Hashrate Chart (<span id="chart-window-label">3h</span>)</h3>
                     <canvas id="hashrate-chart" width="800" height="100"></canvas>
                     <div class="chart-info">
                         <span id="chart-max">Max: --</span>
@@ -310,7 +310,7 @@
         
         <div class="refresh-info">
             <div id="last-update">Never updated</div>
-            <div>Auto-refresh: <span id="auto-refresh-status">Disabled</span> (<span id="refresh-interval" class="editable-interval" contenteditable="true">5</span>s)</div>
+            <div>Auto-refresh: <span id="auto-refresh-status">Enabled</span> (<span id="refresh-interval" class="editable-interval" contenteditable="true">5</span>s)</div>
         </div>
     </div>
 
@@ -318,129 +318,199 @@
         let backendHost = '127.0.0.1';
         let backendPort = 8282;
         let autoRefreshInterval = null;
-        let isAutoRefresh = false;
-        let workersData = { workers: [] };
-        let minersData = { miners: [] };
-        let refreshIntervalValue = 5; // Default interval in seconds
-        let hashrateHistory = []; // Store hashrate history for chart
+        let isAutoRefresh = true;
+        let refreshIntervalValue = 5;
+        let hashrateHistory = [];
         let hashrateChart = null;
-        let chartStartTime = null; // Track when we started collecting data
+        const TOTAL_HISTORY_SECONDS = 3 * 60 * 60; // 3 hours
+        const CHUNK_SECONDS = 600; // 10 minutes per chunk
 
         function updateConfig() {
             backendHost = document.getElementById('backend-host')?.value || '127.0.0.1';
-            backendPort = document.getElementById('backend-port')?.value || 8282;
-            fetchStats();
+            backendPort = parseInt(document.getElementById('backend-port')?.value) || 8282;
+            console.log(`Connecting to ${backendHost}:${backendPort}`);
+            fetchInitialHistory();
         }
 
         function toggleAutoRefresh() {
             if (isAutoRefresh) {
                 clearInterval(autoRefreshInterval);
                 isAutoRefresh = false;
-                const autoRefreshBtn = document.getElementById('auto-refresh-btn');
-                const autoRefreshStatus = document.getElementById('auto-refresh-status');
-                if (autoRefreshBtn) autoRefreshBtn.textContent = 'Enable Auto-refresh';
-                if (autoRefreshStatus) autoRefreshStatus.textContent = 'Disabled';
+                document.getElementById('auto-refresh-btn').textContent = 'Enable Auto-refresh';
+                document.getElementById('auto-refresh-status').textContent = 'Disabled';
+                console.log('Auto-refresh disabled');
             } else {
-                autoRefreshInterval = setInterval(fetchStats, refreshIntervalValue * 1000);
+                autoRefreshInterval = setInterval(fetchLatestStats, refreshIntervalValue * 1000);
                 isAutoRefresh = true;
-                const autoRefreshBtn = document.getElementById('auto-refresh-btn');
-                const autoRefreshStatus = document.getElementById('auto-refresh-status');
-                if (autoRefreshBtn) autoRefreshBtn.textContent = 'Disable Auto-refresh';
-                if (autoRefreshStatus) autoRefreshStatus.textContent = 'Enabled';
-                fetchStats();
+                document.getElementById('auto-refresh-btn').textContent = 'Disable Auto-refresh';
+                document.getElementById('auto-refresh-status').textContent = 'Enabled';
+                console.log('Auto-refresh enabled');
+                fetchLatestStats();
             }
         }
 
         function updateRefreshInterval(element) {
-            console.log('Updating refresh interval');
             let newInterval = parseInt(element.textContent.trim(), 10) || 5;
             if (newInterval < 1) newInterval = 5;
             refreshIntervalValue = newInterval;
             element.textContent = newInterval;
-            console.log('Updated refresh interval to:', refreshIntervalValue, 'seconds');
+            console.log('Refresh interval set to', newInterval, 'seconds');
             if (isAutoRefresh) {
                 clearInterval(autoRefreshInterval);
-                autoRefreshInterval = setInterval(fetchStats, refreshIntervalValue * 1000);
-                console.log('New interval set to:', refreshIntervalValue * 1000, 'ms');
+                autoRefreshInterval = setInterval(fetchLatestStats, refreshIntervalValue * 1000);
             }
         }
 
-        // Add event listeners after DOM load
         document.addEventListener('DOMContentLoaded', () => {
             const refreshInterval = document.getElementById('refresh-interval');
             if (refreshInterval) {
-                console.log('Refresh interval element found');
-                refreshInterval.addEventListener('focus', () => {
-                    console.log('Refresh interval focused');
-                });
-                document.addEventListener('click', (event) => {
-                    if (!refreshInterval.contains(event.target)) {
-                        console.log('Click outside refresh interval, attempting to update');
+                refreshInterval.addEventListener('blur', () => updateRefreshInterval(refreshInterval));
+                refreshInterval.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
                         updateRefreshInterval(refreshInterval);
                     }
                 });
-            } else {
-                console.error('Refresh interval element not found');
             }
             initHashrateChart();
-            fetchStats();
+            fetchInitialHistory();
+            if (isAutoRefresh) {
+                autoRefreshInterval = setInterval(fetchLatestStats, refreshIntervalValue * 1000);
+                fetchLatestStats();
+            }
         });
 
         function initHashrateChart() {
             const canvas = document.getElementById('hashrate-chart');
             if (!canvas) {
-                console.error('Hashrate chart canvas not found');
+                console.error('Canvas element not found');
                 return;
             }
             hashrateChart = canvas.getContext('2d');
-            
-            // Add mouse event listeners for tooltip
             canvas.addEventListener('mousemove', handleChartMouseMove);
             canvas.addEventListener('mouseleave', handleChartMouseLeave);
-            
+            console.log('Chart initialized');
+        }
+
+        async function fetchInitialHistory() {
+            console.log('Fetching initial 3-hour history in chunks');
+            hashrateHistory = [];
+            const now = Date.now() / 1000;
+            const startTime = now - TOTAL_HISTORY_SECONDS;
+            try {
+                // Get the earliest timestamp with full 3-hour range
+                const initialResponse = await fetch(`http://${backendHost}:${backendPort}/stats?time_range=${TOTAL_HISTORY_SECONDS}`);
+                if (!initialResponse.ok) throw new Error(`HTTP ${initialResponse.status}`);
+                const initialData = await initialResponse.json();
+                const earliestTs = initialData.hashrateHistory.length > 0 ? 
+                    Math.min(...initialData.hashrateHistory.map(point => point.timestamp)) : startTime;
+                console.log(`Earliest timestamp found: ${earliestTs}`);
+
+                // Calculate chunks from earliestTs to now
+                const totalDuration = now - earliestTs;
+                const chunkCount = Math.ceil(totalDuration / CHUNK_SECONDS);
+                console.log(`Total duration: ${totalDuration}s, Chunk count: ${chunkCount}`);
+
+                for (let i = 0; i < chunkCount; i++) {
+                    const chunkStart = earliestTs + (i * CHUNK_SECONDS);
+                    const chunkEnd = Math.min(chunkStart + CHUNK_SECONDS, now);
+                    const timeRange = Math.ceil(chunkEnd - chunkStart);
+                    if (timeRange <= 0) continue;
+                    const response = await fetch(`http://${backendHost}:${backendPort}/stats?time_range=${timeRange}&start=${chunkStart}`);
+                    if (!response.ok) throw new Error(`HTTP ${response.status} for chunk ${i + 1}`);
+                    const data = await response.json();
+                    console.log(`Fetched chunk ${i + 1}/${chunkCount}: ${data.hashrateHistory.length} points, range ${chunkStart} to ${chunkEnd}`);
+                    if (data.hashrateHistory && Array.isArray(data.hashrateHistory)) {
+                        hashrateHistory.push(...data.hashrateHistory.map(point => ({
+                            timestamp: point.timestamp,
+                            hashrate: parseFloat(point.hashrate)
+                        })));
+                    }
+                    if (i === chunkCount - 1) {
+                        updateUI(data.summary, data.workers, data.miners);
+                        setConnectionStatus(true);
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching initial history:', error);
+                showError(`Failed to fetch initial history: ${error.message}`);
+                setConnectionStatus(false);
+                return;
+            }
+            hashrateHistory = hashrateHistory.filter(point => point.timestamp >= startTime).sort((a, b) => a.timestamp - b.timestamp);
+            const firstTs = hashrateHistory.length > 0 ? hashrateHistory[0].timestamp : null;
+            const lastTs = hashrateHistory.length > 0 ? hashrateHistory[hashrateHistory.length - 1].timestamp : null;
+            console.log(`Initial history loaded: ${hashrateHistory.length} points, range ${firstTs} to ${lastTs}`);
             drawHashrateChart();
         }
 
+        async function fetchLatestStats() {
+            const baseUrl = `http://${backendHost}:${backendPort}`;
+            console.log(`Fetching latest stats with time_range=${refreshIntervalValue}`);
+            try {
+                showLoading();
+                clearError();
+                const response = await fetch(`${baseUrl}/stats?time_range=${refreshIntervalValue}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                const data = await response.json();
+                console.log('Latest stats received:', data);
+                if (!data.summary) throw new Error('No summary data');
+
+                if (data.hashrateHistory && Array.isArray(data.hashrateHistory)) {
+                    const newPoints = data.hashrateHistory
+                        .map(point => ({
+                            timestamp: point.timestamp,
+                            hashrate: parseFloat(point.hashrate)
+                        }))
+                        .filter(point => !hashrateHistory.some(existing => existing.timestamp === point.timestamp));
+                    hashrateHistory.push(...newPoints);
+                    const cutoff = (Date.now() / 1000) - TOTAL_HISTORY_SECONDS;
+                    hashrateHistory = hashrateHistory.filter(point => point.timestamp >= cutoff);
+                    console.log('Updated hashrateHistory:', hashrateHistory.length, 'points');
+                }
+
+                updateUI(data.summary, data.workers, data.miners);
+                setConnectionStatus(true);
+                document.getElementById('last-update').textContent = `Last updated: ${new Date().toLocaleTimeString('en-US', { timeZone: 'America/Denver' })}`;
+                drawHashrateChart();
+            } catch (error) {
+                console.error('Fetch error:', error);
+                showError(`Failed to connect to ${baseUrl}/stats: ${error.message}`);
+                setConnectionStatus(false);
+            }
+        }
+
         function handleChartMouseMove(event) {
-            if (hashrateHistory.length === 0) return;
-            
+            if (!hashrateHistory.length) return;
             const canvas = event.target;
             const rect = canvas.getBoundingClientRect();
-            
-            // Calculate scaling ratio between display size and internal canvas size
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
-            
-            // Get mouse position relative to canvas and scale to internal coordinates
             const mouseX = (event.clientX - rect.left) * scaleX;
             const mouseY = (event.clientY - rect.top) * scaleY;
-            
-            // Chart dimensions (same as in drawHashrateChart)
             const leftMargin = 50;
             const rightMargin = 10;
             const chartWidth = canvas.width - leftMargin - rightMargin;
-            
-            // Check if mouse is within chart area
-            if (mouseX < leftMargin || mouseX > leftMargin + chartWidth) {
+
+            // Extend right edge slightly to include latest point
+            const maxX = leftMargin + chartWidth + rightMargin * 0.1;
+            if (mouseX < leftMargin || mouseX > maxX) {
                 hideTooltip();
                 return;
             }
-            
-            // Calculate which data point is closest to mouse position
+
             const relativeX = (mouseX - leftMargin) / chartWidth;
-            
-            // Get current time window
-            const now = Date.now() / 1000; // Convert to seconds
-            const windowDuration = getTimeWindowDuration() / 1000; // Convert to seconds
-            const windowStart = isInSlidingMode() ? now - windowDuration : (chartStartTime || now);
-            
-            // Find the closest data point
+            const now = Date.now() / 1000;
+            const windowDuration = TOTAL_HISTORY_SECONDS;
+            const windowStart = now - windowDuration;
+
             let closestPoint = null;
             let closestDistance = Infinity;
-            
+
             hashrateHistory.forEach(point => {
                 const pointRelativePosition = (point.timestamp - windowStart) / windowDuration;
-                if (pointRelativePosition >= 0 && pointRelativePosition <= 1) {
+                console.log(`Point timestamp: ${point.timestamp}, relativePosition: ${pointRelativePosition}`);
+                if (pointRelativePosition >= 0 && pointRelativePosition <= 1.01) { // Allow slight overrun for new points
                     const distance = Math.abs(pointRelativePosition - relativeX);
                     if (distance < closestDistance) {
                         closestDistance = distance;
@@ -448,13 +518,11 @@
                     }
                 }
             });
-            
+
             if (closestPoint) {
-                // Use mouse position relative to canvas for tooltip positioning
                 const mouseRelativeX = event.clientX - rect.left;
                 const mouseRelativeY = event.clientY - rect.top;
                 showTooltip(mouseRelativeX, mouseRelativeY, closestPoint, canvas);
-                // Redraw chart with highlight
                 drawHashrateChart(closestPoint);
             } else {
                 hideTooltip();
@@ -463,170 +531,110 @@
 
         function handleChartMouseLeave() {
             hideTooltip();
-            drawHashrateChart(); // Redraw without highlight
+            drawHashrateChart();
         }
 
-        function showTooltip(relativeX, relativeY, dataPoint, canvas) {
+        function showTooltip(mouseX, mouseY, dataPoint, canvas) {
             const tooltip = document.getElementById('chart-tooltip');
             if (!tooltip) return;
-            
             const time = new Date(dataPoint.timestamp * 1000).toLocaleTimeString('en-US', {
                 hour: 'numeric',
                 minute: '2-digit',
                 second: '2-digit',
                 timeZone: 'America/Denver'
             });
-            
             tooltip.innerHTML = `${time}<br>${formatHashrate(dataPoint.hashrate)}`;
             tooltip.style.display = 'block';
-            
-            // Get canvas position and chart container position
-            const canvasRect = canvas.getBoundingClientRect();
-            const chartContainer = document.getElementById('hashrate-chart-card');
-            const containerRect = chartContainer.getBoundingClientRect();
-            
-            // Position tooltip relative to the chart container
-            const tooltipX = relativeX + 10; // Small offset from cursor
-            const tooltipY = relativeY - 40; // Above the cursor
-            
-            // Convert to position relative to chart container
-            const containerRelativeX = canvasRect.left - containerRect.left + tooltipX;
-            const containerRelativeY = canvasRect.top - containerRect.top + tooltipY;
-            
-            tooltip.style.left = containerRelativeX + 'px';
-            tooltip.style.top = containerRelativeY + 'px';
+
+            const rect = canvas.getBoundingClientRect();
+            const tooltipWidth = tooltip.offsetWidth || 80; // Default width if not yet measured
+            const tooltipHeight = tooltip.offsetHeight || 30; // Default height if not yet measured
+
+            // Position tooltip near mouse, adjusted to stay within canvas
+            let tooltipX = mouseX + 10;
+            let tooltipY = mouseY - tooltipHeight - 10;
+
+            // Ensure tooltip stays within canvas bounds
+            if (tooltipX + tooltipWidth > rect.right) {
+                tooltipX = mouseX - tooltipWidth - 10;
+            }
+            if (tooltipY < rect.top) {
+                tooltipY = mouseY + 10;
+            }
+            if (tooltipY + tooltipHeight > rect.bottom) {
+                tooltipY = mouseY - tooltipHeight - 10;
+            }
+
+            // Apply positioning relative to document
+            tooltip.style.left = `${tooltipX}px`;
+            tooltip.style.top = `${tooltipY}px`;
         }
 
         function hideTooltip() {
             const tooltip = document.getElementById('chart-tooltip');
-            if (tooltip) {
-                tooltip.style.display = 'none';
-            }
-        }
-
-        function addHashrateDataPoint(hashrate, timestamp) {
-            const now = timestamp || Date.now() / 1000; // Convert to seconds
-            
-            // Set start time on first data point
-            if (chartStartTime === null) {
-                chartStartTime = now;
-            }
-            
-            hashrateHistory.push({ hashrate, timestamp: now });
-            
-            // Remove any data points that are more than 3 hours old
-            const threeHoursAgo = now - (3 * 60 * 60);
-            hashrateHistory = hashrateHistory.filter(point => point.timestamp > threeHoursAgo);
-            
-            drawHashrateChart();
-        }
-
-        function getTimeWindowDuration() {
-            if (chartStartTime === null) return 30 * 60 * 1000; // Default 30 minutes
-            
-            const elapsedMinutes = (Date.now() / 1000 - chartStartTime) / 60;
-            
-            if (elapsedMinutes < 30) return 30 * 60 * 1000;        // 30 minutes
-            if (elapsedMinutes < 60) return 60 * 60 * 1000;        // 1 hour
-            if (elapsedMinutes < 90) return 90 * 60 * 1000;        // 1.5 hours
-            if (elapsedMinutes < 120) return 120 * 60 * 1000;      // 2 hours
-            if (elapsedMinutes < 180) return 180 * 60 * 1000;      // 3 hours
-            
-            return 180 * 60 * 1000; // 3 hours (sliding window mode)
-        }
-
-        function getWindowLabel() {
-            if (chartStartTime === null) return "30m";
-            
-            const elapsedMinutes = (Date.now() / 1000 - chartStartTime) / 60;
-            
-            if (elapsedMinutes < 30) return "30m";
-            if (elapsedMinutes < 60) return "1h";
-            if (elapsedMinutes < 90) return "1.5h";
-            if (elapsedMinutes < 120) return "2h";
-            if (elapsedMinutes < 180) return "3h";
-            
-            return "3h"; // sliding window
-        }
-
-        function isInSlidingMode() {
-            if (chartStartTime === null) return false;
-            const elapsedMinutes = (Date.now() / 1000 - chartStartTime) / 60;
-            return elapsedMinutes >= 180;
+            if (tooltip) tooltip.style.display = 'none';
         }
 
         function drawHashrateChart(highlightPoint = null) {
-            if (!hashrateChart) return;
-            
+            if (!hashrateChart) {
+                console.error('Chart context missing');
+                return;
+            }
             const canvas = document.getElementById('hashrate-chart');
             const ctx = hashrateChart;
             const width = canvas.width;
             const height = canvas.height;
-            
-            // Clear canvas
+
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, width, height);
-            
-            // Update window label
+
             const windowLabel = document.getElementById('chart-window-label');
-            if (windowLabel) windowLabel.textContent = getWindowLabel();
-            
-            // Calculate time window based on elapsed time
-            const now = Date.now() / 1000; // Convert to seconds
-            const windowDuration = getTimeWindowDuration() / 1000; // Convert to seconds
-            const windowStart = isInSlidingMode() ? now - windowDuration : (chartStartTime || now);
-            const windowEnd = windowStart + windowDuration;
-            
-            // Calculate min/max for scaling (only if we have data)
+            if (windowLabel) windowLabel.textContent = '3h';
+
+            const now = Date.now() / 1000;
+            const windowDuration = TOTAL_HISTORY_SECONDS;
+            const windowStart = now - windowDuration;
+
             let minHashrate = 0;
-            let maxHashrate = 100; // Default range
+            let maxHashrate = 1;
             let currentHashrate = 0;
-            
+            let rawMaxHashrate = 0;
+
             if (hashrateHistory.length > 0) {
                 const hashrates = hashrateHistory.map(point => point.hashrate);
                 minHashrate = Math.min(...hashrates);
-                maxHashrate = Math.max(...hashrates);
-                currentHashrate = hashrateHistory[hashrateHistory.length - 1].hashrate;
-                
-                // Add some padding to the range
+                rawMaxHashrate = Math.max(...hashrates);
+                maxHashrate = rawMaxHashrate; // Use raw max for display
+                console.log(`Raw max hashrate: ${rawMaxHashrate}, min hashrate: ${minHashrate}`);
                 const range = maxHashrate - minHashrate || 1;
-                const padding = range * 0.1;
+                const padding = range * 0.05; // 5% padding for scale
                 minHashrate = Math.max(0, minHashrate - padding);
-                maxHashrate = maxHashrate + padding;
+                maxHashrate = maxHashrate + padding; // Padded for graph scaling
+                console.log(`Padded max hashrate for scale: ${maxHashrate}, padded min: ${minHashrate}`);
             }
-            
-            // Update info display below chart
-            const maxElement = document.getElementById('chart-max');
-            const minElement = document.getElementById('chart-min');
-            const currentElement = document.getElementById('chart-current');
-            if (maxElement) maxElement.textContent = hashrateHistory.length > 0 ? `Max: ${formatHashrate(Math.max(...hashrateHistory.map(p => p.hashrate)))}` : 'Max: --';
-            if (minElement) minElement.textContent = hashrateHistory.length > 0 ? `Min: ${formatHashrate(Math.min(...hashrateHistory.map(p => p.hashrate)))}` : 'Min: --';
-            if (currentElement) currentElement.textContent = hashrateHistory.length > 0 ? `Current: ${formatHashrate(currentHashrate)}` : 'Current: --';
-            
-            // Margins for axes
+
+            document.getElementById('chart-max').textContent = hashrateHistory.length ? `Max: ${formatHashrate(rawMaxHashrate)}` : 'Max: --';
+            document.getElementById('chart-min').textContent = hashrateHistory.length ? `Min: ${formatHashrate(minHashrate)}` : 'Min: --';
+            document.getElementById('chart-current').textContent = hashrateHistory.length ? `Current: ${formatHashrate(currentHashrate)}` : 'Current: --';
+
             const leftMargin = 50;
             const bottomMargin = 20;
             const topMargin = 10;
             const rightMargin = 10;
             const chartWidth = width - leftMargin - rightMargin;
             const chartHeight = height - topMargin - bottomMargin;
-            
-            // Draw Y-axis labels and grid lines
+
             ctx.fillStyle = '#0f0';
             ctx.font = '10px Courier New';
             ctx.strokeStyle = '#003300';
             ctx.lineWidth = 0.5;
-            
+
             const ySteps = 5;
             const range = maxHashrate - minHashrate;
             for (let i = 0; i <= ySteps; i++) {
                 const value = minHashrate + (range * i / ySteps);
                 const y = topMargin + chartHeight - (i / ySteps * chartHeight);
-                
-                // Y-axis label
                 ctx.fillText(formatHashrate(value), 2, y + 3);
-                
-                // Horizontal grid line
                 if (i > 0) {
                     ctx.beginPath();
                     ctx.moveTo(leftMargin, y);
@@ -634,23 +642,18 @@
                     ctx.stroke();
                 }
             }
-            
-            // Draw X-axis time labels and grid lines
-            const xSteps = Math.min(6, Math.max(3, Math.floor(windowDuration / (30 * 60)))); // Adaptive steps
+
+            const xSteps = 6;
             for (let i = 0; i <= xSteps; i++) {
                 const timeOffset = windowDuration * (i / xSteps);
-                const time = new Date((windowStart + timeOffset) * 1000); // Convert back to milliseconds
+                const time = new Date((windowStart + timeOffset) * 1000);
                 const x = leftMargin + (i / xSteps * chartWidth);
-                
-                // X-axis label
                 const timeStr = time.toLocaleTimeString('en-US', { 
                     hour: 'numeric', 
                     minute: '2-digit',
                     timeZone: 'America/Denver'
                 });
                 ctx.fillText(timeStr, x - 15, height - 5);
-                
-                // Vertical grid line
                 if (i > 0 && i < xSteps) {
                     ctx.beginPath();
                     ctx.moveTo(x, topMargin);
@@ -658,33 +661,25 @@
                     ctx.stroke();
                 }
             }
-            
-            // Draw hashrate line (only if we have data)
+
             if (hashrateHistory.length > 1) {
                 ctx.strokeStyle = '#0f0';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                
                 let firstPoint = true;
                 let highlightX = null;
                 let highlightY = null;
-                
-                hashrateHistory.forEach((point, index) => {
-                    // Calculate x position based on timestamp relative to current time window
+
+                hashrateHistory.forEach(point => {
                     const relativePosition = (point.timestamp - windowStart) / windowDuration;
-                    
-                    // Only draw points that fall within our current window
                     if (relativePosition >= 0 && relativePosition <= 1) {
                         const x = leftMargin + (relativePosition * chartWidth);
                         const normalizedHashrate = (point.hashrate - minHashrate) / range;
                         const y = topMargin + chartHeight - (normalizedHashrate * chartHeight);
-                        
-                        // Check if this is the highlight point
                         if (highlightPoint && point.timestamp === highlightPoint.timestamp) {
                             highlightX = x;
                             highlightY = y;
                         }
-                        
                         if (firstPoint) {
                             ctx.moveTo(x, y);
                             firstPoint = false;
@@ -694,8 +689,7 @@
                     }
                 });
                 ctx.stroke();
-                
-                // Draw highlight dot if we have a highlight point
+
                 if (highlightX !== null && highlightY !== null) {
                     ctx.fillStyle = '#0f0';
                     ctx.beginPath();
@@ -703,116 +697,53 @@
                     ctx.fill();
                 }
             }
-            
-            // Draw Y-axis line
+
             ctx.strokeStyle = '#0f0';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(leftMargin, topMargin);
             ctx.lineTo(leftMargin, topMargin + chartHeight);
             ctx.stroke();
-            
-            // Draw X-axis line
             ctx.beginPath();
             ctx.moveTo(leftMargin, topMargin + chartHeight);
             ctx.lineTo(leftMargin + chartWidth, topMargin + chartHeight);
             ctx.stroke();
         }
 
-        async function fetchStats() {
-            const baseUrl = `http://${backendHost}:${backendPort}`;
-            try {
-                showLoading();
-                clearError();
-
-                // Fetch all stats from backend
-                const response = await fetch(`${baseUrl}/stats`);
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch stats: ${response.status} ${response.statusText}`);
-                }
-                const data = await response.json();
-                
-                if (!data.summary) {
-                    throw new Error('No valid summary data received. Check backend configuration.');
-                }
-
-                // Update hashrate history
-                if (data.hashrateHistory && Array.isArray(data.hashrateHistory)) {
-                    hashrateHistory = data.hashrateHistory.map(point => ({
-                        timestamp: point.timestamp,
-                        hashrate: parseFloat(point.hashrate)
-                    }));
-                }
-
-                updateUI(data.summary, data.workers, data.miners);
-                setConnectionStatus(true);
-                const lastUpdate = document.getElementById('last-update');
-                if (lastUpdate) {
-                    lastUpdate.textContent = `Last updated: ${new Date().toLocaleTimeString('en-US', { timeZone: 'America/Denver' })}`;
-                } else {
-                    console.error('Element with ID "last-update" not found in DOM');
-                }
-            } catch (error) {
-                console.error('Error in fetchStats:', error);
-                showError(`Failed to connect to backend: ${error.message}. Check that backend is running and port is correct.`);
-                setConnectionStatus(false);
-            }
-        }
-
         function updateUI(summary = {}, workersData = { workers: [] }, minersData = { miners: [] }) {
             const statsContainer = document.getElementById('stats-container');
             if (!statsContainer) {
-                console.error('Element with ID "stats-container" not found in DOM');
+                console.error('Stats container missing');
                 return;
             }
             statsContainer.style.display = 'block';
 
-            const updateElement = (id, value) => {
-                const element = document.getElementById(id);
-                if (element) {
-                    element.textContent = value;
-                } else {
-                    console.error(`Element with ID "${id}" not found in DOM');
-                }
-            };
-
-            updateElement('workers-count', summary.miners?.now || summary.workers || 0);
-            updateElement('accepted-shares', summary.results?.accepted || 0);
-            updateElement('upstreams-count', summary.upstreams?.active || 0);
-            updateElement('uptime', formatUptime(summary.uptime || 0));
+            document.getElementById('workers-count').textContent = summary.miners?.now || summary.workers || 0;
+            document.getElementById('accepted-shares').textContent = summary.results?.accepted || 0;
+            document.getElementById('upstreams-count').textContent = summary.upstreams?.active || 0;
+            document.getElementById('uptime').textContent = formatUptime(summary.uptime || 0);
 
             const workersTbody = document.getElementById('workers-tbody');
-            if (!workersTbody) {
-                console.error('Element with ID "workers-tbody" not found in DOM');
-                return;
-            }
             workersTbody.innerHTML = '';
-            
-            if (workersData?.workers && Array.isArray(workersData.workers) && workersData.workers.length > 0) {
-                const activeWorkers = workersData.workers.filter(worker => worker[2] > 0); // Filter out workers with Connection count = 0 (index 2)
-                if (activeWorkers.length > 0) {
+
+            if (workersData?.workers?.length) {
+                const activeWorkers = workersData.workers.filter(worker => worker[2] > 0);
+                console.log('Active workers:', activeWorkers);
+                if (activeWorkers.length) {
                     activeWorkers.forEach(worker => {
                         const workerId = worker[0] || 'Unknown';
                         const workerIp = worker[1] || 'Unknown';
                         const accepted = worker[3] || 0;
                         const rejected = worker[4] || 0;
-                        
-                        // Get hashrate data (10m and 24h)
                         const hashrate10m = worker[9] || 0;
                         const hashrate24h = worker[12] || 0;
-                        
-                        // Find matching miner for difficulty
                         let difficulty = 'N/A';
-                        if (minersData?.miners && Array.isArray(minersData.miners)) {
-                            const matchingMiner = minersData.miners.find(miner => {
-                                // Match by IP address or rig_id
-                                return miner[1] === workerIp || miner[8] === workerId;
-                            });
+                        if (minersData?.miners?.length) {
+                            const matchingMiner = minersData.miners.find(miner => miner[1] === workerIp || miner[8] === workerId);
                             if (matchingMiner && matchingMiner[5]) {
                                 difficulty = formatDifficulty(matchingMiner[5]);
                             }
                         }
-                        
                         const row = workersTbody.insertRow();
                         row.innerHTML = `
                             <td>${workerId}</td>
@@ -825,30 +756,22 @@
                         `;
                     });
                 } else {
-                    const row = workersTbody.insertRow();
-                    row.innerHTML = '<td colspan="7" style="text-align: center; color: #0f0;">No active workers with connections</td>';
+                    workersTbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No active workers</td></tr>';
                 }
             } else {
-                const row = workersTbody.insertRow();
-                row.innerHTML = '<td colspan="7" style="text-align: center; color: #0f0;">No worker details available</td>';
+                workersTbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No workers available</td></tr>';
             }
         }
 
         function formatHashrate(hashrate) {
-            if (hashrate >= 1000) {
-                return (hashrate / 1000).toFixed(2) + ' MH/s';
-            } else if (hashrate >= 1) {
-                return hashrate.toFixed(2) + ' kH/s';
-            }
+            if (hashrate >= 1000) return (hashrate / 1000).toFixed(2) + ' MH/s';
+            if (hashrate >= 1) return hashrate.toFixed(2) + ' kH/s';
             return hashrate.toFixed(2) + ' H/s';
         }
 
         function formatDifficulty(difficulty) {
-            if (difficulty >= 1000000) {
-                return (difficulty / 1000000).toFixed(2) + 'M';
-            } else if (difficulty >= 1000) {
-                return (difficulty / 1000).toFixed(1) + 'K';
-            }
+            if (difficulty >= 1000000) return (difficulty / 1000000).toFixed(2) + 'M';
+            if (difficulty >= 1000) return (difficulty / 1000).toFixed(1) + 'K';
             return difficulty.toString();
         }
 
@@ -856,11 +779,8 @@
             const hours = Math.floor(seconds / 3600);
             const minutes = Math.floor((seconds % 3600) / 60);
             const secs = seconds % 60;
-            if (hours > 0) {
-                return `${hours}h ${minutes}m`;
-            } else if (minutes > 0) {
-                return `${minutes}m ${secs}s`;
-            }
+            if (hours > 0) return `${hours}h ${minutes}m`;
+            if (minutes > 0) return `${minutes}m ${secs}s`;
             return `${secs}s`;
         }
 
@@ -868,23 +788,18 @@
             const statusEl = document.getElementById('connection-status');
             const indicator = statusEl?.querySelector('.status-indicator');
             const text = statusEl?.querySelector('span:last-child');
-            if (!statusEl || !indicator || !text) {
-                console.error('Connection status elements missing in DOM');
-                return;
+            if (indicator && text) {
+                indicator.className = `status-indicator ${connected ? 'status-online' : 'status-offline'}`;
+                text.textContent = connected ? 'Connected' : 'Disconnected';
             }
-            indicator.className = `status-indicator ${connected ? 'status-online' : 'status-offline'}`;
-            text.textContent = connected ? 'Connected' : 'Disconnected';
         }
 
         function showError(message) {
             const container = document.getElementById('error-container');
-            if (!container) {
-                console.error('Element with ID "error-container" not found in DOM');
-                return;
+            if (container) {
+                container.innerHTML = `<div class="error-message">${message}</div>`;
+                document.getElementById('stats-container').style.display = 'none';
             }
-            container.innerHTML = `<div class="error-message">${message}</div>`;
-            const statsContainer = document.getElementById('stats-container');
-            if (statsContainer) statsContainer.style.display = 'none';
         }
 
         function clearError() {
@@ -896,9 +811,6 @@
             const container = document.getElementById('error-container');
             if (container) container.innerHTML = '<div class="loading">Loading...</div>';
         }
-
-        // Wait for DOM to load
-        document.addEventListener('DOMContentLoaded', fetchStats);
     </script>
 </body>
 </html>
