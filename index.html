@@ -75,10 +75,6 @@
             width: 120px;
         }
         
-        .config-inputs .token-input {
-            flex-grow: 1;
-        }
-        
         .config-inputs button {
             padding: 2px 5px;
             background: #000;
@@ -248,14 +244,10 @@
         <div class="config-section">
             <div class="config-inputs">
                 <div class="input-row">
-                    <label for="proxy-host">Proxy Host:</label>
-                    <input type="text" id="proxy-host" value="127.0.0.1" placeholder="127.0.0.1">
-                    <label for="proxy-port">API Port:</label>
-                    <input type="number" id="proxy-port" value="8080" placeholder="8080">
-                    <div>
-                        <label for="access-token">Access Token:</label>
-                        <input type="password" id="access-token" placeholder="Optional" class="token-input" oninput="maskToken(this)">
-                    </div>
+                    <label for="backend-host">Backend Host:</label>
+                    <input type="text" id="backend-host" value="127.0.0.1" placeholder="127.0.0.1">
+                    <label for="backend-port">Backend Port:</label>
+                    <input type="number" id="backend-port" value="8000" placeholder="8000">
                 </div>
                 <div class="button-row">
                     <button onclick="updateConfig()">Connect</button>
@@ -323,8 +315,8 @@
     </div>
 
     <script>
-        let proxyHost = '127.0.0.1';
-        let proxyPort = 8080;
+        let backendHost = '127.0.0.1';
+        let backendPort = 8000;
         let autoRefreshInterval = null;
         let isAutoRefresh = false;
         let workersData = { workers: [] };
@@ -335,8 +327,8 @@
         let chartStartTime = null; // Track when we started collecting data
 
         function updateConfig() {
-            proxyHost = document.getElementById('proxy-host')?.value || '127.0.0.1';
-            proxyPort = document.getElementById('proxy-port')?.value || 8080;
+            backendHost = document.getElementById('backend-host')?.value || '127.0.0.1';
+            backendPort = document.getElementById('backend-port')?.value || 8000;
             fetchStats();
         }
 
@@ -357,12 +349,6 @@
                 if (autoRefreshStatus) autoRefreshStatus.textContent = 'Enabled';
                 fetchStats();
             }
-        }
-
-        function maskToken(input) {
-            const value = input.value;
-            input.value = '*'.repeat(value.length);
-            input.dataset.actualValue = value;
         }
 
         function updateRefreshInterval(element) {
@@ -444,8 +430,8 @@
             const relativeX = (mouseX - leftMargin) / chartWidth;
             
             // Get current time window
-            const now = Date.now();
-            const windowDuration = getTimeWindowDuration();
+            const now = Date.now() / 1000; // Convert to seconds
+            const windowDuration = getTimeWindowDuration() / 1000; // Convert to seconds
             const windowStart = isInSlidingMode() ? now - windowDuration : (chartStartTime || now);
             
             // Find the closest data point
@@ -484,7 +470,7 @@
             const tooltip = document.getElementById('chart-tooltip');
             if (!tooltip) return;
             
-            const time = new Date(dataPoint.timestamp).toLocaleTimeString('en-US', {
+            const time = new Date(dataPoint.timestamp * 1000).toLocaleTimeString('en-US', {
                 hour: 'numeric',
                 minute: '2-digit',
                 second: '2-digit',
@@ -519,7 +505,7 @@
         }
 
         function addHashrateDataPoint(hashrate, timestamp) {
-            const now = timestamp || Date.now();
+            const now = timestamp || Date.now() / 1000; // Convert to seconds
             
             // Set start time on first data point
             if (chartStartTime === null) {
@@ -529,7 +515,7 @@
             hashrateHistory.push({ hashrate, timestamp: now });
             
             // Remove any data points that are more than 3 hours old
-            const threeHoursAgo = now - (3 * 60 * 60 * 1000);
+            const threeHoursAgo = now - (3 * 60 * 60);
             hashrateHistory = hashrateHistory.filter(point => point.timestamp > threeHoursAgo);
             
             drawHashrateChart();
@@ -538,7 +524,7 @@
         function getTimeWindowDuration() {
             if (chartStartTime === null) return 30 * 60 * 1000; // Default 30 minutes
             
-            const elapsedMinutes = (Date.now() - chartStartTime) / (60 * 1000);
+            const elapsedMinutes = (Date.now() / 1000 - chartStartTime) / 60;
             
             if (elapsedMinutes < 30) return 30 * 60 * 1000;        // 30 minutes
             if (elapsedMinutes < 60) return 60 * 60 * 1000;        // 1 hour
@@ -552,7 +538,7 @@
         function getWindowLabel() {
             if (chartStartTime === null) return "30m";
             
-            const elapsedMinutes = (Date.now() - chartStartTime) / (60 * 1000);
+            const elapsedMinutes = (Date.now() / 1000 - chartStartTime) / 60;
             
             if (elapsedMinutes < 30) return "30m";
             if (elapsedMinutes < 60) return "1h";
@@ -565,7 +551,7 @@
 
         function isInSlidingMode() {
             if (chartStartTime === null) return false;
-            const elapsedMinutes = (Date.now() - chartStartTime) / (60 * 1000);
+            const elapsedMinutes = (Date.now() / 1000 - chartStartTime) / 60;
             return elapsedMinutes >= 180;
         }
 
@@ -586,8 +572,8 @@
             if (windowLabel) windowLabel.textContent = getWindowLabel();
             
             // Calculate time window based on elapsed time
-            const now = Date.now();
-            const windowDuration = getTimeWindowDuration();
+            const now = Date.now() / 1000; // Convert to seconds
+            const windowDuration = getTimeWindowDuration() / 1000; // Convert to seconds
             const windowStart = isInSlidingMode() ? now - windowDuration : (chartStartTime || now);
             const windowEnd = windowStart + windowDuration;
             
@@ -650,10 +636,10 @@
             }
             
             // Draw X-axis time labels and grid lines
-            const xSteps = Math.min(6, Math.max(3, Math.floor(windowDuration / (30 * 60 * 1000)))); // Adaptive steps
+            const xSteps = Math.min(6, Math.max(3, Math.floor(windowDuration / (30 * 60)))); // Adaptive steps
             for (let i = 0; i <= xSteps; i++) {
                 const timeOffset = windowDuration * (i / xSteps);
-                const time = new Date(windowStart + timeOffset);
+                const time = new Date((windowStart + timeOffset) * 1000); // Convert back to milliseconds
                 const x = leftMargin + (i / xSteps * chartWidth);
                 
                 // X-axis label
@@ -734,60 +720,31 @@
         }
 
         async function fetchStats() {
-            const baseUrl = `http://${proxyHost}:${proxyPort}`;
-            const accessToken = document.getElementById('access-token')?.dataset.actualValue || null;
-            const headers = accessToken ? { "Authorization": `Bearer ${accessToken}` } : {};
-
+            const baseUrl = `http://${backendHost}:${backendPort}`;
             try {
                 showLoading();
                 clearError();
 
-                let data = null;
-                try {
-                    const response = await fetch(`${baseUrl}/1/summary`, { headers });
-                    if (response.ok) {
-                        data = await response.json();
-                        console.log('Summary data:', data);
-                    } else {
-                        console.error(`Failed to fetch /1/summary: ${response.status} ${response.statusText}`);
-                    }
-                } catch (e) {
-                    console.error('Error fetching /1/summary:', e.message);
+                // Fetch all stats from backend
+                const response = await fetch(`${baseUrl}/stats`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch stats: ${response.status} ${response.statusText}`);
+                }
+                const data = await response.json();
+                
+                if (!data.summary) {
+                    throw new Error('No valid summary data received. Check backend configuration.');
                 }
 
-                // Fetch workers data
-                workersData = { workers: [] };
-                try {
-                    const workersResponse = await fetch(`${baseUrl}/1/workers`, { headers });
-                    if (workersResponse.ok) {
-                        workersData = await workersResponse.json();
-                        console.log('Workers data:', workersData);
-                    } else {
-                        console.error(`Failed to fetch /1/workers: ${workersResponse.status} ${workersResponse.statusText}`);
-                    }
-                } catch (e) {
-                    console.error('Error fetching /1/workers:', e.message);
+                // Update hashrate history
+                if (data.hashrateHistory && Array.isArray(data.hashrateHistory)) {
+                    hashrateHistory = data.hashrateHistory.map(point => ({
+                        timestamp: point.timestamp,
+                        hashrate: parseFloat(point.hashrate)
+                    }));
                 }
 
-                // Fetch miners data for difficulty information
-                minersData = { miners: [] };
-                try {
-                    const minersResponse = await fetch(`${baseUrl}/1/miners`, { headers });
-                    if (minersResponse.ok) {
-                        minersData = await minersResponse.json();
-                        console.log('Miners data:', minersData);
-                    } else {
-                        console.error(`Failed to fetch /1/miners: ${minersResponse.status} ${minersResponse.statusText}`);
-                    }
-                } catch (e) {
-                    console.error('Error fetching /1/miners:', e.message);
-                }
-
-                if (!data) {
-                    throw new Error('No valid summary data received. Check API port and configuration.');
-                }
-
-                updateUI(data, workersData, minersData);
+                updateUI(data.summary, data.workers, data.miners);
                 setConnectionStatus(true);
                 const lastUpdate = document.getElementById('last-update');
                 if (lastUpdate) {
@@ -797,7 +754,7 @@
                 }
             } catch (error) {
                 console.error('Error in fetchStats:', error);
-                showError(`Failed to connect to XMRig Proxy: ${error.message}. Check that API is enabled and port is correct.`);
+                showError(`Failed to connect to backend: ${error.message}. Check that backend is running and port is correct.`);
                 setConnectionStatus(false);
             }
         }
@@ -823,10 +780,6 @@
             updateElement('accepted-shares', summary.results?.accepted || 0);
             updateElement('upstreams-count', summary.upstreams?.active || 0);
             updateElement('uptime', formatUptime(summary.uptime || 0));
-
-            // Add current hashrate to chart history
-            const currentHashrate = summary.hashrate?.total?.[0] || 0;
-            addHashrateDataPoint(currentHashrate);
 
             const workersTbody = document.getElementById('workers-tbody');
             if (!workersTbody) {
@@ -909,16 +862,6 @@
                 return `${minutes}m ${secs}s`;
             }
             return `${secs}s`;
-        }
-
-        function formatTimestamp(timestamp) {
-            if (!timestamp || isNaN(timestamp)) return 'Unknown';
-            const date = new Date(timestamp > 1e12 ? timestamp / 1000 : timestamp);
-            if (isNaN(date.getTime())) {
-                console.error('Invalid timestamp:', timestamp);
-                return 'Unknown';
-            }
-            return date.toLocaleTimeString('en-US', { timeZone: 'America/Denver' });
         }
 
         function setConnectionStatus(connected) {
