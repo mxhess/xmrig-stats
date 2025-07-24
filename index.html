@@ -463,16 +463,19 @@
                             hashrate: parseFloat(point.hashrate)
                         }))
                         .filter(point => !hashrateHistory.some(existing => existing.timestamp === point.timestamp));
-                    hashrateHistory.push(...newPoints);
+                    if (newPoints.length > 0) {
+                        console.log(`Adding ${newPoints.length} new points, latest: ${newPoints[newPoints.length - 1].timestamp}, ${newPoints[newPoints.length - 1].hashrate}`);
+                        hashrateHistory.push(...newPoints);
+                    }
                     const cutoff = (Date.now() / 1000) - TOTAL_HISTORY_SECONDS;
-                    hashrateHistory = hashrateHistory.filter(point => point.timestamp >= cutoff);
-                    console.log('Updated hashrateHistory:', hashrateHistory.length, 'points');
+                    hashrateHistory = hashrateHistory.filter(point => point.timestamp >= cutoff).sort((a, b) => a.timestamp - b.timestamp);
+                    console.log(`Updated hashrateHistory: ${hashrateHistory.length} points, latest: ${hashrateHistory[hashrateHistory.length - 1]?.timestamp}, ${hashrateHistory[hashrateHistory.length - 1]?.hashrate}`);
                 }
 
                 updateUI(data.summary, data.workers, data.miners);
                 setConnectionStatus(true);
                 document.getElementById('last-update').textContent = `Last updated: ${new Date().toLocaleTimeString('en-US', { timeZone: 'America/Denver' })}`;
-                drawHashrateChart();
+                drawHashrateChart(); // Ensure chart updates
             } catch (error) {
                 console.error('Fetch error:', error);
                 showError(`Failed to connect to ${baseUrl}/stats: ${error.message}`);
@@ -611,6 +614,8 @@
                 minHashrate = Math.max(0, minHashrate - padding);
                 maxHashrate = maxHashrate + padding; // Padded for graph scaling
                 console.log(`Padded max hashrate for scale: ${maxHashrate}, padded min: ${minHashrate}`);
+                currentHashrate = hashrateHistory[hashrateHistory.length - 1].hashrate; // Use latest point
+                console.log(`Current hashrate: ${currentHashrate} at ${hashrateHistory[hashrateHistory.length - 1].timestamp}`);
             }
 
             document.getElementById('chart-max').textContent = hashrateHistory.length ? `Max: ${formatHashrate(rawMaxHashrate)}` : 'Max: --';
