@@ -15,11 +15,18 @@ install python redis and requests packages
 copy service file and edit for whatever non-privlidged user will be running it
 enable and start the xmrig-stats service
 
-I do assume you are running the xmrig-proxy as a service as well and made the stats service dependent upon it.
+both of these commands should return:
 
+python3.13 -c "import redis; print(redis.__version__)"
+ >= 6.2.0
+python3.13 -c "import requests; print(requests.__version__)"
+ >= 2.32.4
+
+
+I do assume you are running the xmrig-proxy as a service as well and made the stats service dependent upon it.
 If you need, I included a general xmrig-proxy.service file in case that helps.
 
-I included ishell script to manage active xmrig-proxy pool that you can use with cron to automatically redirect your proxy at certain times or trigger given certain conditions.
+I included a shell script to manage the active xmrig-proxy pool that you can use with cron to automatically redirect your proxy at certain times or trigger given certain conditions.
 
 switch_pool.sh usage:
 
