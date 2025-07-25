@@ -1,0 +1,26 @@
+# /etc/systemd/system/xmrig-proxy.service
+
+[Unit]
+Description=XMRig Proxy Service
+After=network-online.target
+
+[Service]
+ExecStart=/home/<standard user>/xmrig-proxy/xmrig-proxy -c /home/<standard user>/xmrig-proxy/config.json
+ExecStartPost=/bin/sleep 1
+Type=simple
+
+Restart=always
+RestartSec=30
+
+Nice=-5
+
+User=mxhess
+Group=mxhess
+RuntimeDirectory=<standard user>
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+

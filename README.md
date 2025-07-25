@@ -8,12 +8,22 @@ and running the xmrig_stats.py python script will require minimal python additio
 
 you need the python redis and requests packages
 
+general install:
 
-included script to manage active xmrig-proxy pool
+install valkey
+install python redis and requests packages
+copy service file and edit for whatever non-privlidged user will be running it
+enable and start the xmrig-stats service
+
+I do assume you are running the xmrig-proxy as a service as well and made the stats service dependent upon it.
+
+If you need, I included a general xmrig-proxy.service file in case that helps.
+
+I included ishell script to manage active xmrig-proxy pool that you can use with cron to automatically redirect your proxy at certain times or trigger given certain conditions.
 
 switch_pool.sh usage:
 
-./switch_pool.sh matching.url.from.url:including:port
+./switch_pool.sh matching.url.from.config.including:port
 
 ex:
 
