@@ -4,7 +4,7 @@
 TARGET_INTERVAL=30
 
 # Time range for logs (in hours)
-LOG_START_HOURS=72
+LOG_START_HOURS=12
 
 # Service name for journald (adjust if your XMRig-proxy service name differs)
 SERVICE_NAME="xmrig-proxy"
