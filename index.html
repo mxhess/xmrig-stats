@@ -392,57 +392,37 @@
             console.log('Chart initialized');
         }
 
-        async function fetchInitialHistory() {
-            console.log('Fetching initial 3-hour history in chunks');
-            hashrateHistory = [];
-            const now = Date.now() / 1000;
-            const startTime = now - TOTAL_HISTORY_SECONDS;
-            try {
-                // Get the earliest timestamp with full 3-hour range
-                const initialResponse = await fetch(`http://${backendHost}:${backendPort}/stats?time_range=${TOTAL_HISTORY_SECONDS}`);
-                if (!initialResponse.ok) throw new Error(`HTTP ${initialResponse.status}`);
-                const initialData = await initialResponse.json();
-                const earliestTs = initialData.hashrateHistory.length > 0 ? 
-                    Math.min(...initialData.hashrateHistory.map(point => point.timestamp)) : startTime;
-                console.log(`Earliest timestamp found: ${earliestTs}`);
-
-                // Calculate chunks from earliestTs to now
-                const totalDuration = now - earliestTs;
-                const chunkCount = Math.ceil(totalDuration / CHUNK_SECONDS);
-                console.log(`Total duration: ${totalDuration}s, Chunk count: ${chunkCount}`);
-
-                for (let i = 0; i < chunkCount; i++) {
-                    const chunkStart = earliestTs + (i * CHUNK_SECONDS);
-                    const chunkEnd = Math.min(chunkStart + CHUNK_SECONDS, now);
-                    const timeRange = Math.ceil(chunkEnd - chunkStart);
-                    if (timeRange <= 0) continue;
-                    const response = await fetch(`http://${backendHost}:${backendPort}/stats?time_range=${timeRange}&start=${chunkStart}`);
-                    if (!response.ok) throw new Error(`HTTP ${response.status} for chunk ${i + 1}`);
-                    const data = await response.json();
-                    console.log(`Fetched chunk ${i + 1}/${chunkCount}: ${data.hashrateHistory.length} points, range ${chunkStart} to ${chunkEnd}`);
-                    if (data.hashrateHistory && Array.isArray(data.hashrateHistory)) {
-                        hashrateHistory.push(...data.hashrateHistory.map(point => ({
-                            timestamp: point.timestamp,
-                            hashrate: parseFloat(point.hashrate)
-                        })));
-                    }
-                    if (i === chunkCount - 1) {
-                        updateUI(data.summary, data.workers, data.miners);
-                        setConnectionStatus(true);
-                    }
-                }
-            } catch (error) {
-                console.error('Error fetching initial history:', error);
-                showError(`Failed to fetch initial history: ${error.message}`);
-                setConnectionStatus(false);
-                return;
-            }
-            hashrateHistory = hashrateHistory.filter(point => point.timestamp >= startTime).sort((a, b) => a.timestamp - b.timestamp);
-            const firstTs = hashrateHistory.length > 0 ? hashrateHistory[0].timestamp : null;
-            const lastTs = hashrateHistory.length > 0 ? hashrateHistory[hashrateHistory.length - 1].timestamp : null;
-            console.log(`Initial history loaded: ${hashrateHistory.length} points, range ${firstTs} to ${lastTs}`);
-            drawHashrateChart();
-        }
+	async function fetchInitialHistory() {
+	    console.log('Fetching initial 3-hour history');
+	    hashrateHistory = [];
+    
+	    try {
+	        // Get the full 3-hour history in one request instead of chunks
+	        const response = await fetch(`http://${backendHost}:${backendPort}/stats?time_range=${TOTAL_HISTORY_SECONDS}`);
+	        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+	        const data = await response.json();
+        
+	        console.log(`Received ${data.hashrateHistory.length} total points`);
+        
+	        hashrateHistory = data.hashrateHistory.map(point => ({
+	            timestamp: point.timestamp,
+	            hashrate: parseFloat(point.hashrate)
+	        }));
+        
+	        // Update UI with the current data
+	        updateUI(data.summary, data.workers, data.miners);
+	        setConnectionStatus(true);
+        
+	    } catch (error) {
+	        console.error('Error fetching initial history:', error);
+	        showError(`Failed to fetch initial history: ${error.message}`);
+	        setConnectionStatus(false);
+	        return;
+	    }
+    
+	    console.log(`Initial history loaded: ${hashrateHistory.length} points`);
+	    drawHashrateChart();
+	}
 
         async function fetchLatestStats() {
             const baseUrl = `http://${backendHost}:${backendPort}`;

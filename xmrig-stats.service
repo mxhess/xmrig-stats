@@ -9,6 +9,8 @@ WorkingDirectory=/home/<standard-user>/xmrig-stats
 ExecStart=/usr/bin/python3 /home/<standard-user>/xmrig-stats/xmrig_stats.py
 Restart=always
 RestartSec=5
+TimeoutStartSec=10
+TimeoutStopSec=5
 
 [Install]
 WantedBy=multi-user.target
